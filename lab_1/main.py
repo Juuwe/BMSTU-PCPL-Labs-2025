@@ -68,12 +68,12 @@ def solve_biquadrate_equation(a: float, b: float, c: float):
         root2 = math.sqrt(t2)
         roots.extend([-root2, root2])
 
+    if not roots:
+        return "No real roots"
+
     return sorted(roots)
 
 def run():
-    command_args = sys.argv[1:]
-
-
     coeff_a = get_coeff_from_user(1, "Enter coefficient A:")
     coeff_b = get_coeff_from_user(2, "Enter coefficient B:")
     coeff_c = get_coeff_from_user(3, "Enter coefficient C:")
