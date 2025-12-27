@@ -49,48 +49,47 @@ func (bot *Bot) StartListen() {
 }
 
 func (bot *Bot) ProcessOrders() {
-	for update := range bot.updateChan {
-		userMsg := update.Message
-		chatID := update.Message.Chat.ID
+    for update := range bot.updateChan {
+        if update.Message == nil {
+            continue
+        }
 
-		if userMsg == nil {
-			continue
-		}
+        userMsg := update.Message
+        chatID := userMsg.Chat.ID
 
-		if userMsg.IsCommand() && userMsg.Command() == "start" {
-			newOrder := fsm.UserOrder{CurState: fsm.WAITING_NAME}
+        if userMsg.IsCommand() && userMsg.Command() == "start" {
+            newOrder := fsm.UserOrder{CurState: fsm.WAITING_NAME}
+            bot.orderMap[chatID] = append(bot.orderMap[chatID], newOrder)
 
-			bot.orderMap[chatID] = append(bot.orderMap[chatID], newOrder)
-			nameQuery := "Enter the name of good"
+            botMsg := tgbotapi.NewMessage(chatID, "Enter the name of good")
+            botMsg.ReplyToMessageID = userMsg.MessageID
+            bot.botAPI.Send(botMsg)
+            continue
+        }
 
-			botMsg := tgbotapi.NewMessage(userMsg.Chat.ID, nameQuery)
-			botMsg.ReplyToMessageID = userMsg.MessageID
+        orders, exists := bot.orderMap[chatID]
+        if !exists || len(orders) == 0 {
+            botMsg := tgbotapi.NewMessage(chatID, "Please send /start to create a new order.")
+            bot.botAPI.Send(botMsg)
+            continue
+        }
 
-			_, err := bot.botAPI.Send(botMsg)
-			if err != nil {
-				log.Printf("Ошибка при отправке сообщения: %v", err)
-			}
+        lastIdx := len(orders) - 1
+        currentOrder := &bot.orderMap[chatID][lastIdx]
 
-			continue
-		}
+        if currentOrder.CurState == fsm.SUCCESS {
+            msgText := "Your order is done. Write command /start for new order"
+            botMsg := tgbotapi.NewMessage(chatID, msgText)
+            botMsg.ReplyToMessageID = userMsg.MessageID
+            bot.botAPI.Send(botMsg)
+            continue
+        }
 
-		usrOrderList := bot.orderMap[chatID]
-		usrLastOrder := usrOrderList[len(usrOrderList)-1]
+        stateFunc := bot.TRANSITION_TABLE[currentOrder.CurState]
+        stateFunc(currentOrder, *userMsg)
 
-		if usrLastOrder.CurState == fsm.SUCCESS {
-			nameQuery := "Your order is done. Write command /start for new order"
-
-			botMsg := tgbotapi.NewMessage(userMsg.Chat.ID, nameQuery)
-			botMsg.ReplyToMessageID = userMsg.MessageID
-			bot.botAPI.Send(botMsg)
-			continue
-		}
-
-		log.Println(usrLastOrder.CurState, len(usrOrderList))
-		bot.TRANSITION_TABLE[usrLastOrder.CurState](&usrLastOrder, *userMsg)
-
-		bot.orderMap[chatID][len(usrOrderList)-1] = usrLastOrder
-	}
+        log.Printf("User %d moved to state: %v", chatID, currentOrder.CurState)
+    }
 }
 
 func (bot *Bot) HandleConfirmingMessage(order *fsm.UserOrder, msg tgbotapi.Message) {
